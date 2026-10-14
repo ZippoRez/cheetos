@@ -92,7 +92,16 @@ Don't need a sheet? Right-click it in the sidebar, click the eye-slash icon in t
 
 ## Releases
 
-Pushes to `main` (and manual dispatches) trigger `.github/workflows/release.yml`, which builds `Cheetos.app`, optionally codesigns/notarizes it, and publishes a GitHub release with a versioned zip.
+Pushes to `main`, tags matching `v*`, and manual dispatches trigger `.github/workflows/release.yml`. It runs `swift test`, builds `Cheetos.app`, optionally codesigns/notarizes it, and publishes a GitHub release with a versioned zip. A failing test or build prevents publication.
+
+To release a specific commit (including one on a feature branch), push a version tag:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tag-triggered releases use that tag unchanged. Main pushes and manual dispatches generate a unique build tag. Every release points to the commit that CI built.
 
 Signing tiers (workflow degrades gracefully based on which secrets are set):
 
