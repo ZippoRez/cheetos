@@ -157,4 +157,47 @@ final class NoteNavigationTests: XCTestCase {
         }
         func updateNSView(_ view: NSView, context: Context) {}
     }
+
+    func testLongCommandsStayInsideWindowAfterResizing() {
+        _ = NSApplication.shared
+        let command = "ycp --syntax 2 --profile internal ydb database get-by-path --location-id location --path "
+            + String(repeating: "/very-long-database-path", count: 12)
+        let root = HStack(spacing: 0) {
+            Text("Sidebar").frame(width: 200)
+                .background(RowMarker(id: "sidebar"))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    MarkdownBlock.quote("Замени параметры своими значениями").view(highlight: "")
+                        .background(RowMarker(id: "quote"))
+                    MarkdownBlock.section("Команды").view(highlight: "")
+                        .background(RowMarker(id: "section"))
+                    MarkdownBlock.keyRow(key: command, desc: "Найти базу по пути").view(highlight: "")
+                        .background(RowMarker(id: "command"))
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        let host = NSHostingController(rootView: root)
+        host.sizingOptions = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 680),
+                              styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = host
+        defer { window.close() }
+        for width in [900, 1300, 900] {
+            window.setContentSize(NSSize(width: width, height: 680))
+            host.view.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            for id in ["sidebar", "quote", "section", "command"] {
+                guard let marker = findMarker(id, in: host.view) else { XCTFail("Missing \(id)"); return }
+                let rect = host.view.convert(marker.bounds, from: marker)
+                XCTAssertTrue(rect.minX >= -1 && rect.maxX <= host.view.bounds.maxX + 1,
+                              "\(id) overflows at width \(width): \(rect)")
+                if id == "quote" || id == "section" {
+                    XCTAssertTrue(rect.height < 80, "\(id) stretches vertically: \(rect.height)")
+                }
+            }
+        }
+    }
 }

@@ -1014,7 +1014,8 @@ private struct CopyableKeyPill: View {
                             .stroke(Color.yellow.opacity(0.9), lineWidth: 1.5)
                     }
                 }
-                .fixedSize(horizontal: true, vertical: false)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
                 .animation(.easeInOut(duration: 0.15), value: copied)
                 .animation(.easeInOut(duration: 0.1), value: hovering)
         }
