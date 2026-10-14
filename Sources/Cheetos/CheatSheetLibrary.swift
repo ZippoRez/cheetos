@@ -15,11 +15,13 @@ struct CheatSheet: Identifiable, Hashable {
     }
 }
 
-struct IndexedCommand: Hashable {
+struct IndexedCommand: Hashable, Identifiable {
     let sheetID: String
     let sheetTitle: String
     let key: String
     let desc: String
+
+    var id: String { sheetID + "\u{0}" + key }
 }
 
 @MainActor
@@ -27,10 +29,12 @@ final class CheatSheetLibrary: ObservableObject {
     @Published private(set) var sheets: [CheatSheet] = []
     @Published private(set) var commandIndex: [IndexedCommand] = []
     @Published private(set) var hiddenSheetIDs: Set<String> = []
+    @Published private(set) var favoriteCommandIDs: Set<String> = []
+    private let defaults: UserDefaults
+    private let favoritesKey = "cheetos.favoriteCommandIDs"
 
     /// User-editable directory at ~/.cheetos.
-    let userDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".cheetos", isDirectory: true)
+    let userDirectory: URL
 
     private var watcher: DispatchSourceFileSystemObject?
     private var watchFD: Int32 = -1
@@ -63,22 +67,22 @@ final class CheatSheetLibrary: ObservableObject {
     }
 
     private func loadHidden() {
-        let arr = UserDefaults.standard.stringArray(forKey: hiddenKey) ?? []
+        let arr = defaults.stringArray(forKey: hiddenKey) ?? []
         hiddenSheetIDs = Set(arr)
     }
 
     private func persistHidden() {
-        UserDefaults.standard.set(Array(hiddenSheetIDs), forKey: hiddenKey)
+        defaults.set(Array(hiddenSheetIDs), forKey: hiddenKey)
     }
 
     var lastSheetID: String? {
-        get { UserDefaults.standard.string(forKey: lastSheetKey) }
-        set { UserDefaults.standard.set(newValue, forKey: lastSheetKey) }
+        get { defaults.string(forKey: lastSheetKey) }
+        set { defaults.set(newValue, forKey: lastSheetKey) }
     }
 
     private var usageCounts: [String: Int] {
-        get { (UserDefaults.standard.dictionary(forKey: usageKey) as? [String: Int]) ?? [:] }
-        set { UserDefaults.standard.set(newValue, forKey: usageKey) }
+        get { (defaults.dictionary(forKey: usageKey) as? [String: Int]) ?? [:] }
+        set { defaults.set(newValue, forKey: usageKey) }
     }
 
     func usage(for sheetID: String) -> Int {
@@ -92,11 +96,15 @@ final class CheatSheetLibrary: ObservableObject {
         lastSheetID = sheetID
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard, userDirectory: URL? = nil, watch: Bool = true) {
+        self.defaults = defaults
+        self.userDirectory = userDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cheetos", isDirectory: true)
+        favoriteCommandIDs = Set(defaults.stringArray(forKey: favoritesKey) ?? [])
         ensureUserDirectory()
         loadHidden()
         load()
-        startWatching()
+        if watch { startWatching() }
     }
 
     deinit {
@@ -159,7 +167,26 @@ final class CheatSheetLibrary: ObservableObject {
                 }
             }
         }
-        commandIndex = index
+        var seen = Set<String>()
+        commandIndex = index.filter { seen.insert($0.id).inserted }
+    }
+
+    func toggleFavorite(_ command: IndexedCommand) {
+        if !favoriteCommandIDs.insert(command.id).inserted {
+            favoriteCommandIDs.remove(command.id)
+        }
+        defaults.set(Array(favoriteCommandIDs).sorted(), forKey: favoritesKey)
+    }
+
+    func matchingCommands(query: String, favoritesOnly: Bool = false) -> [IndexedCommand] {
+        let words = query.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        return commandIndex.filter { command in
+            (!favoritesOnly || favoriteCommandIDs.contains(command.id)) && words.allSatisfy { word in
+                [command.key, command.desc, command.sheetTitle].contains {
+                    $0.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                }
+            }
+        }
     }
 
     /// Best matching command across all sheets for the given query.
@@ -287,8 +314,25 @@ final class CheatSheetLibrary: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([sheet.url])
     }
 
-    func openInEditor(_ sheet: CheatSheet) {
-        NSWorkspace.shared.open(sheet.url)
+    @discardableResult
+    func openInEditor(_ sheet: CheatSheet) -> Bool {
+        do {
+            return NSWorkspace.shared.open(try editableURL(for: sheet))
+        } catch {
+            NSLog("Failed to prepare editable sheet: \(error)")
+            return false
+        }
+    }
+
+    /// Preserve an existing custom copy; never open a bundled resource for editing.
+    func editableURL(for sheet: CheatSheet) throws -> URL {
+        if sheet.isUserProvided { return sheet.url }
+        ensureUserDirectory()
+        let dest = userDirectory.appendingPathComponent("\(sheet.id).md")
+        if !FileManager.default.fileExists(atPath: dest.path) {
+            try sheet.content.write(to: dest, atomically: true, encoding: .utf8)
+        }
+        return dest
     }
 
     /// Copy a bundled sheet into ~/.cheetos so the user can edit it. No-op if a user copy exists.

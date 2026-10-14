@@ -78,12 +78,21 @@ struct ContentView: View {
     @State private var keyMonitor: Any?
     @State private var readingNote = false
     @StateObject private var noteScroller = NoteScrollController()
+    @State private var favoritesOnly = false
+    @State private var commandSelection: String?
+    @State private var showingKeyboardHelp = false
+    @State private var editorFailed = false
+
+    private var browsingCommands: Bool {
+        !showingSettings && !readingNote && (favoritesOnly || !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    private var commandResults: [IndexedCommand] { library.matchingCommands(query: search, favoritesOnly: favoritesOnly) }
+    private var selectedCommand: IndexedCommand? { commandResults.first { $0.id == commandSelection } ?? commandResults.first }
 
     var body: some View {
         VStack(spacing: 0) {
             dragHandle
             searchHeader
-            quickActionBanner
             Divider().opacity(0.5)
             if library.visibleSheets.isEmpty && !showingSettings {
                 emptyState
@@ -114,6 +123,17 @@ struct ContentView: View {
             installKeyMonitor()
         }
         .onDisappear { removeKeyMonitor() }
+        .alert("Не удалось открыть редактор", isPresented: $editorFailed) {
+            Button("Закрыть", role: .cancel) {}
+        } message: {
+            Text("Проверьте приложение по умолчанию для файлов .md и доступ к ~/.cheetos.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            library.load()
+        }
+        .onChange(of: commandResults.map(\.id)) { _, ids in
+            if !ids.contains(commandSelection ?? "") { commandSelection = ids.first }
+        }
         .onChange(of: searchFocused) { _, focused in
             if focused { readingNote = false }
         }
@@ -156,53 +176,10 @@ struct ContentView: View {
         }
     }
 
-    // MARK: Quick-action banner
-
-    @ViewBuilder
-    private var quickActionBanner: some View {
-        if !search.isEmpty, let match = library.topMatch(for: search) {
-            Button {
-                performQuickAction(match: match)
-            } label: {
-                HStack(spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.accentColor)
-                        Image(systemName: "return")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                    .frame(width: 18, height: 18)
-                    Text("Copy")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(match.key)
-                        .font(.system(size: 12.5, weight: .medium, design: .monospaced))
-                    Text("— \(match.desc)")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 8)
-                    Text(match.sheetTitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Color.primary.opacity(0.08)))
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.accentColor.opacity(0.10))
-            }
-            .buttonStyle(.plain)
-            .help("Press ↩ to copy and close")
-        }
-    }
+    // MARK: Command copying
 
     private func performQuickAction(match: IndexedCommand? = nil) {
-        let match = match ?? library.topMatch(for: search)
+        let match = match ?? selectedCommand
         guard let m = match else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -226,7 +203,7 @@ struct ContentView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .font(.system(size: 13, weight: .medium))
-            TextField("Search cheat sheets", text: $search)
+            TextField(favoritesOnly ? "Поиск в избранном" : "Поиск по всем вкладкам", text: $search)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .focused($searchFocused)
@@ -240,6 +217,11 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
             }
+            Button { showingKeyboardHelp.toggle() } label: {
+                Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("⌘/ — сочетания клавиш")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -262,6 +244,18 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
+            Button(action: toggleFavorites) {
+                HStack {
+                    Image(systemName: "star.fill").foregroundStyle(.yellow)
+                    Text("Избранное")
+                    Spacer()
+                    Text("⌘⇧F").foregroundStyle(.secondary)
+                }
+                .font(.system(size: 12))
+                .padding(10)
+                .background(favoritesOnly ? Color.accentColor.opacity(0.12) : .clear)
+            }
+            .buttonStyle(.plain)
             SelectionFollowingScrollView(selection: selection) {
                 VStack(spacing: 2) {
                     ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, sheet in
@@ -273,6 +267,8 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                         .id(sheet.id)
                         .onTapGesture {
+                            favoritesOnly = false
+                            search = ""
                             selection = sheet.id
                             readingNote = false
                             searchFocused = true
@@ -413,8 +409,26 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if showingSettings {
+        if showingKeyboardHelp {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Без мышки").font(.title2.bold())
+                Text("⌘F — поиск по всем вкладкам\n⌘⇧F — избранное\n↑↓ — выбрать команду\nEnter — копировать и закрыть\nTab — открыть заметку\n⌘D — добавить / убрать команду\n⌘E — открыть заметку в редакторе\n⌘N — новая заметка\n⌘1–9 — выбрать вкладку\n⌘, — настройки\n⌘Q — выйти")
+                Text("В заметке: ↑↓ или j/k — прокрутка\nFn+↑↓ — страница · ⌘↑↓ — начало / конец\nEsc / ⇧Tab — вернуться к списку")
+                Text("⌘/ или Esc — закрыть подсказку").foregroundStyle(.secondary)
+                Spacer()
+            }
+            .font(.system(size: 13))
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if showingSettings {
             SettingsPage()
+        } else if browsingCommands {
+            CommandResultsView(commands: commandResults, selection: selectedCommand?.id,
+                               favorites: library.favoriteCommandIDs, favoritesOnly: favoritesOnly,
+                               onSelect: { commandSelection = $0.id },
+                               onCopy: { performQuickAction(match: $0) },
+                               onFavorite: { library.toggleFavorite($0) },
+                               onOpen: { openSource($0) })
         } else if let id = selection, let sheet = library.sheets.first(where: { $0.id == id }) {
             CheatSheetView(sheet: sheet, highlight: search, onHide: { hide(sheet) },
                            reading: readingNote, scroller: noteScroller)
@@ -486,12 +500,14 @@ struct ContentView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Text(footerCountLabel)
+            Text(browsingCommands ? "\(commandResults.count) команд" : footerCountLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
             ShortcutHint(keys: readingNote ? "↑↓ / j k" : "↑↓", label: readingNote ? "прокрутка" : "выбор")
-            if !readingNote { ShortcutHint(keys: "↩ / Tab", label: "читать") }
+            if !readingNote { ShortcutHint(keys: "↩", label: browsingCommands ? "копировать" : "читать") }
+            if browsingCommands { ShortcutHint(keys: "Tab", label: "заметка") }
+            ShortcutHint(keys: browsingCommands ? "⌘D" : "⌘E", label: browsingCommands ? "избранное" : "редактор")
             ShortcutHint(keys: "⌘F", label: "поиск")
             ShortcutHint(keys: "esc", label: readingNote ? "к списку" : "закрыть")
             Button {
@@ -512,6 +528,30 @@ struct ContentView: View {
 
     // MARK: Keyboard handling
 
+    private func toggleFavorites() {
+        favoritesOnly.toggle()
+        showingSettings = false
+        readingNote = false
+        search = ""
+        commandSelection = commandResults.first?.id
+        searchFocused = true
+    }
+
+    private func openSource(_ command: IndexedCommand) {
+        selection = command.sheetID
+        commandSelection = command.id
+        showingSettings = false
+        readingNote = true
+        searchFocused = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+
+    private func editCurrentSheet() {
+        let id = browsingCommands ? selectedCommand?.sheetID : selection
+        guard let sheet = library.sheets.first(where: { $0.id == id }) else { return }
+        editorFailed = !library.openInEditor(sheet)
+    }
+
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -529,14 +569,45 @@ struct ContentView: View {
     // Return true if the event was consumed.
     private func handleKey(_ event: NSEvent) -> Bool {
         // Let any presented alert handle keys natively.
-        if creatingNewSheet || newSheetErrorMessage != nil { return false }
+        if creatingNewSheet || newSheetErrorMessage != nil || editorFailed { return false }
 
         let cmd = event.modifierFlags.contains(.command)
         let chars = event.charactersIgnoringModifiers ?? ""
 
+        if cmd && event.keyCode == 44 {
+            showingKeyboardHelp.toggle()
+            return true
+        }
+        if showingKeyboardHelp {
+            if event.keyCode == 53 { showingKeyboardHelp = false; return true }
+            return false
+        }
+        if cmd && event.keyCode == 12 {
+            NSApp.terminate(nil)
+            return true
+        }
+        if cmd && event.keyCode == 45 {
+            beginNewSheet()
+            return true
+        }
+
         // ⌘F → focus search
-        if cmd && chars == "f" {
+        if cmd && event.keyCode == 3 && event.modifierFlags.contains(.shift) {
+            toggleFavorites()
+            return true
+        }
+        if cmd && event.keyCode == 14 && !showingSettings {
+            editCurrentSheet()
+            return true
+        }
+        if cmd && event.keyCode == 2 && browsingCommands {
+            if let command = selectedCommand { library.toggleFavorite(command) }
+            return true
+        }
+        if cmd && event.keyCode == 3 {
             readingNote = false
+            showingSettings = false
+            favoritesOnly = false
             searchFocused = true
             return true
         }
@@ -553,6 +624,8 @@ struct ContentView: View {
             let list = filtered
             if n - 1 < list.count {
                 selection = list[n - 1].id
+                search = ""
+                favoritesOnly = false
                 readingNote = false
                 searchFocused = true
                 showingSettings = false
@@ -562,7 +635,24 @@ struct ContentView: View {
             return false
         }
 
-        if !showingSettings, selection != nil,
+        let plain = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+        if browsingCommands, let action = CommandResultAction.resolve(keyCode: event.keyCode, modifiers: event.modifierFlags) {
+            switch action {
+            case .move(let delta):
+                let ids = commandResults.map(\.id)
+                commandSelection = CommandSelection.moved(in: ids, current: selectedCommand?.id,
+                                                         by: delta)
+                return true
+            case .copy:
+                performQuickAction()
+                return true
+            case .open:
+                if let command = selectedCommand { openSource(command) }
+                return true
+            }
+        }
+
+        if !browsingCommands, !showingSettings, selection != nil,
            let action = NoteKeyboardAction.resolve(keyCode: event.keyCode, characters: chars,
                                                     modifiers: event.modifierFlags,
                                                     reading: readingNote, searchEmpty: search.isEmpty) {
@@ -582,7 +672,6 @@ struct ContentView: View {
 
         // Settings controls and search editing keep their native key handling.
         if showingSettings && event.keyCode != 53 { return false }
-        let plain = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
 
         switch event.keyCode {
         case 53: // Esc
@@ -590,6 +679,8 @@ struct ContentView: View {
                 showingSettings = false
             } else if !search.isEmpty {
                 search = ""
+            } else if favoritesOnly {
+                favoritesOnly = false
             } else {
                 closeWindow()
             }
@@ -770,15 +861,15 @@ struct CheatSheetView: View {
             }
             .buttonStyle(.plain)
             .help("Hide this sheet")
+            Button {
+                library.openInEditor(sheet)
+            } label: {
+                Image(systemName: "pencil")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("⌘E — открыть в редакторе")
             if sheet.isUserProvided {
-                Button {
-                    library.openInEditor(sheet)
-                } label: {
-                    Image(systemName: "pencil")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Edit in your default editor")
                 Button {
                     library.reveal(sheet)
                 } label: {

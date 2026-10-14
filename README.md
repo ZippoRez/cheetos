@@ -14,8 +14,9 @@ Click the menu bar icon → search → pick a sheet from the sidebar, or press y
 
 - Menu bar app — no dock icon, lives quietly in your status bar
 - Optional global hotkey to toggle the window from anywhere
-- Fuzzy search across titles and bodies, with match highlighting
-- Quick-action banner: press ↩ to copy the top-matching command and dismiss
+- Global command search across sheet titles, commands and descriptions
+- Keyboard-selectable search results: press ↩ to copy the selected command and dismiss
+- Persistent favorite commands and keyboard editing of any sheet
 - Click any `` `command` `` pill or fenced code block to copy it
 - 10 bundled sheets, plus drop-in support for your own at `~/.cheetos/`
 - Hide individual sheets you don't use
@@ -23,8 +24,6 @@ Click the menu bar icon → search → pick a sheet from the sidebar, or press y
 - Usage-aware sidebar ordering (most-used sheets float to the top)
 - ⌘1–⌘9 to jump to a sheet, ⌘F to focus search, ⌘, for Settings
 - Open at login toggle
-
-![Quick-action banner](docs/screenshots/quick-action.png)
 
 ## Keyboard reading
 
@@ -35,7 +34,12 @@ Click the menu bar icon → search → pick a sheet from the sidebar, or press y
   (`Fn+↑` / `Fn+↓` on a MacBook) scroll by a page.
 - `Cmd+↑` / `Cmd+↓` or `Home` / `End`: go to the beginning / end.
 - `Esc` or `Shift+Tab`: return to selection; `Cmd+F`: return to search.
-- With a search query, `Enter` still copies the best matching command.
+- `Cmd+F`: search commands across all visible sheets. Search terms can span the title, command and description.
+- In results: `↑` / `↓` select a command (with automatic scrolling), `Enter` copies it and closes, `Tab` opens its source note. `Esc` / `Shift+Tab` returns from the note to results.
+- `Cmd+D`: toggle the selected result as a favorite. `Cmd+Shift+F`: open / leave favorites; typing there searches only favorites. Favorites persist across restarts and description edits.
+- `Cmd+E`: edit the current note, or the selected result's source, in the default `.md` editor. Bundled notes are copied to `~/.cheetos`; an existing custom copy is preserved. Returning to Cheetos reloads edits.
+- `Cmd+N`: create a note; `Cmd+/`: show keyboard help; `Cmd+Q`: quit.
+- `Esc` clears a search, leaves favorites, or closes the window in that order.
 
 The footer and the colored edge of the note show when reading mode is active.
 
@@ -78,7 +82,7 @@ Bundled defaults (Git, Vim, Tmux, Bash, Docker, Kubectl, SSH, curl, find/grep, H
 
 ### Hiding sheets
 
-Don't need a sheet? Right-click it in the sidebar, click the eye-slash icon in the detail header, or toggle it in **Settings → Show / Hide Sheets**. Hidden sheets stay out of the sidebar, search results, and the quick-action banner until you re-enable them.
+Don't need a sheet? Right-click it in the sidebar, click the eye-slash icon in the detail header, or toggle it in **Settings → Show / Hide Sheets**. Hidden sheets stay out of the sidebar, search results, and favorites until you re-enable them.
 
 ![Show / Hide Sheets](docs/screenshots/hide-sheets.png)
 
