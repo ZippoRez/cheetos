@@ -14,6 +14,7 @@ let package = Package(
                 .copy("Resources/cheatsheets"),
                 .copy("Resources/Logo.png")
             ]
-        )
+        ),
+        .testTarget(name: "CheetosTests", dependencies: ["Cheetos"])
     ]
 )

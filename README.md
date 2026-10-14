@@ -26,6 +26,20 @@ Click the menu bar icon → search → pick a sheet from the sidebar, or press y
 
 ![Quick-action banner](docs/screenshots/quick-action.png)
 
+## Keyboard reading
+
+- `↑` / `↓`: select a cheat sheet.
+- `Enter` with an empty search, or `Tab`: enter the selected note.
+- Inside a note: `↑` / `↓` or `j` / `k` scroll; `Page Up` / `Page Down`
+  (`Fn+↑` / `Fn+↓` on a MacBook) scroll by a page.
+- `Cmd+↑` / `Cmd+↓` or `Home` / `End`: go to the beginning / end.
+- `Esc` or `Shift+Tab`: return to selection; `Cmd+F`: return to search.
+- With a search query, `Enter` still copies the best matching command.
+
+The footer and the colored edge of the note show when reading mode is active.
+
+Run `swift test` to check keyboard routing and native scrolling.
+
 ## Requirements
 - macOS 14+
 - Swift 5.9+ (Xcode 15 or Command Line Tools)

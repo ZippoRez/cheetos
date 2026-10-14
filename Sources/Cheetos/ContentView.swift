@@ -76,6 +76,8 @@ struct ContentView: View {
     @State private var newSheetErrorMessage: String?
     @FocusState private var searchFocused: Bool
     @State private var keyMonitor: Any?
+    @State private var readingNote = false
+    @StateObject private var noteScroller = NoteScrollController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -112,7 +114,14 @@ struct ContentView: View {
             installKeyMonitor()
         }
         .onDisappear { removeKeyMonitor() }
+        .onChange(of: searchFocused) { _, focused in
+            if focused { readingNote = false }
+        }
+        .onChange(of: showingSettings) { _, visible in
+            if visible { readingNote = false }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openCheetosSettings)) { _ in
+            readingNote = false
             showingSettings = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .startNewSheet)) { _ in
@@ -264,6 +273,8 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             selection = sheet.id
+                            readingNote = false
+                            searchFocused = true
                             showingSettings = false
                             library.recordUse(of: sheet.id)
                         }
@@ -341,6 +352,7 @@ struct ContentView: View {
     }
 
     private func beginNewSheet() {
+        readingNote = false
         showingSettings = false
         newSheetName = ""
         newSheetErrorMessage = nil
@@ -403,7 +415,8 @@ struct ContentView: View {
         if showingSettings {
             SettingsPage()
         } else if let id = selection, let sheet = library.sheets.first(where: { $0.id == id }) {
-            CheatSheetView(sheet: sheet, highlight: search, onHide: { hide(sheet) })
+            CheatSheetView(sheet: sheet, highlight: search, onHide: { hide(sheet) },
+                           reading: readingNote, scroller: noteScroller)
                 .id(sheet.id)
         } else {
             VStack(spacing: 10) {
@@ -476,9 +489,10 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
-            ShortcutHint(keys: "↑↓", label: "navigate")
-            ShortcutHint(keys: "⌘F", label: "search")
-            ShortcutHint(keys: "esc", label: "close")
+            ShortcutHint(keys: readingNote ? "↑↓ / j k" : "↑↓", label: readingNote ? "прокрутка" : "выбор")
+            if !readingNote { ShortcutHint(keys: "↩ / Tab", label: "читать") }
+            ShortcutHint(keys: "⌘F", label: "поиск")
+            ShortcutHint(keys: "esc", label: readingNote ? "к списку" : "закрыть")
             Button {
                 NSApp.terminate(nil)
             } label: {
@@ -521,12 +535,14 @@ struct ContentView: View {
 
         // ⌘F → focus search
         if cmd && chars == "f" {
+            readingNote = false
             searchFocused = true
             return true
         }
 
         // ⌘, → toggle inline settings
         if cmd && chars == "," {
+            readingNote = false
             showingSettings.toggle()
             return true
         }
@@ -536,12 +552,36 @@ struct ContentView: View {
             let list = filtered
             if n - 1 < list.count {
                 selection = list[n - 1].id
+                readingNote = false
+                searchFocused = true
                 showingSettings = false
                 library.recordUse(of: list[n - 1].id)
                 return true
             }
             return false
         }
+
+        if !showingSettings, selection != nil,
+           let action = NoteKeyboardAction.resolve(keyCode: event.keyCode, characters: chars,
+                                                    modifiers: event.modifierFlags,
+                                                    reading: readingNote, searchEmpty: search.isEmpty) {
+            switch action {
+            case .enter:
+                readingNote = true
+                searchFocused = false
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            case .leave:
+                readingNote = false
+                searchFocused = true
+            case .scroll(let command):
+                noteScroller.scroll(command)
+            }
+            return true
+        }
+
+        // Settings controls and search editing keep their native key handling.
+        if showingSettings && event.keyCode != 53 { return false }
+        let plain = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
 
         switch event.keyCode {
         case 53: // Esc
@@ -553,10 +593,10 @@ struct ContentView: View {
                 closeWindow()
             }
             return true
-        case 125: // Down
+        case 125 where plain && !readingNote: // Down
             moveSelection(by: 1)
             return true
-        case 126: // Up
+        case 126 where plain && !readingNote: // Up
             moveSelection(by: -1)
             return true
         default:
@@ -638,6 +678,8 @@ struct CheatSheetView: View {
     let sheet: CheatSheet
     let highlight: String
     let onHide: () -> Void
+    let reading: Bool
+    let scroller: NoteScrollController
     @EnvironmentObject var library: CheatSheetLibrary
     @State private var confirmDelete = false
 
@@ -668,6 +710,10 @@ struct CheatSheetView: View {
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
+                    .background(NoteScrollProbe(controller: scroller).frame(width: 0, height: 0))
+                }
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(reading ? Color.accentColor : .clear).frame(width: 2)
                 }
             }
         }
