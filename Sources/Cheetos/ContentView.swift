@@ -262,7 +262,7 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            ScrollView {
+            SelectionFollowingScrollView(selection: selection) {
                 VStack(spacing: 2) {
                     ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, sheet in
                         SidebarRow(
@@ -271,6 +271,7 @@ struct ContentView: View {
                             shortcutHint: idx < 9 ? "⌘\(idx + 1)" : nil
                         )
                         .contentShape(Rectangle())
+                        .id(sheet.id)
                         .onTapGesture {
                             selection = sheet.id
                             readingNote = false

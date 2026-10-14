@@ -94,4 +94,67 @@ final class NoteNavigationTests: XCTestCase {
         init(frame: NSRect, flipped: Bool) { self.documentFlipped = flipped; super.init(frame: frame) }
         required init?(coder: NSCoder) { fatalError("Not used") }
     }
+
+    func testSidebarKeepsSelectedRowVisibleAtBothEnds() {
+        _ = NSApplication.shared
+        let model = SidebarSelection()
+        let controller = NoteScrollController()
+        let host = NSHostingView(rootView: SidebarFixture(model: model, controller: controller))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        defer { window.close() }
+
+        for selected in [39, 0, 25, 3] {
+            model.selection = selected
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            guard let scroll = controller.scrollView, let document = scroll.documentView,
+                  let marker = findMarker("row-\(selected)", in: document) else {
+                XCTFail("Missing sidebar scroll view or selected row")
+                return
+            }
+            let row = document.convert(marker.bounds, from: marker)
+            XCTAssertTrue(scroll.documentVisibleRect.insetBy(dx: -1, dy: -1).contains(row),
+                          "Selected row \(selected) is outside the visible sidebar")
+        }
+    }
+
+    private func findMarker(_ id: String, in view: NSView) -> NSView? {
+        if view.identifier?.rawValue == id { return view }
+        return view.subviews.lazy.compactMap { self.findMarker(id, in: $0) }.first
+    }
+
+    private final class SidebarSelection: ObservableObject {
+        @Published var selection: Int? = 0
+    }
+
+    private struct SidebarFixture: View {
+        @ObservedObject var model: SidebarSelection
+        let controller: NoteScrollController
+        var body: some View {
+            SelectionFollowingScrollView(selection: model.selection) {
+                VStack(spacing: 0) {
+                    ForEach(0..<40) { index in
+                        Text("Sheet \(index)").frame(width: 250, height: 32)
+                            .background(RowMarker(id: "row-\(index)"))
+                            .id(index)
+                    }
+                }
+                .background(NoteScrollProbe(controller: controller).frame(width: 0, height: 0))
+            }
+        }
+    }
+
+    private struct RowMarker: NSViewRepresentable {
+        let id: String
+        func makeNSView(context: Context) -> NSView {
+            let view = NSView()
+            view.identifier = NSUserInterfaceItemIdentifier(id)
+            return view
+        }
+        func updateNSView(_ view: NSView, context: Context) {}
+    }
 }

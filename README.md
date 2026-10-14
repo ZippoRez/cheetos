@@ -29,6 +29,7 @@ Click the menu bar icon → search → pick a sheet from the sidebar, or press y
 ## Keyboard reading
 
 - `↑` / `↓`: select a cheat sheet.
+  The sidebar scrolls automatically to keep the selected sheet visible.
 - `Enter` with an empty search, or `Tab`: enter the selected note.
 - Inside a note: `↑` / `↓` or `j` / `k` scroll; `Page Up` / `Page Down`
   (`Fn+↑` / `Fn+↓` on a MacBook) scroll by a page.

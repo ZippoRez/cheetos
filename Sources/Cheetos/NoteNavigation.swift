@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+struct SelectionFollowingScrollView<ID: Hashable, Content: View>: View {
+    let selection: ID?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView { content() }
+                .onAppear { revealSelection(using: proxy) }
+                .onChange(of: selection) { _, _ in revealSelection(using: proxy) }
+        }
+    }
+
+    private func revealSelection(using proxy: ScrollViewProxy) {
+        guard let selection else { return }
+        // Wait for the selected row's layout, including filtering/reordering.
+        // No animation: repeated arrow presses should follow immediately.
+        DispatchQueue.main.async { proxy.scrollTo(selection) }
+    }
+}
+
 enum NoteScrollCommand: Equatable {
     case line(Int), page(Int), top, bottom
 
